@@ -29,9 +29,24 @@ current_dir = Path(
 )
 
 
+def _create_branch(repo, branch):
+    main_version = float(os.environ["MAIN_VERSION"])
+    branch = float(branch)
+
+    if branch < main_version:
+        source_branch = branch + 1
+    elif branch == main_version:
+        source_branch = main_version
+    else:
+        source_branch = branch - 1
+    repo.checkout(str(source_branch), force=True)
+    repo.X(*(git + ["checkout", "-b", str(branch)]))
+    repo.X(*(git + ["push", "--set-upstream", "origin", str(branch)]))
+
+
 def _get_mappings(current_branch):
     vbmb = Path(version_behind_main_branch)
-    main_version = float(os.environ['MAIN_VERSION'])
+    main_version = float(os.environ["MAIN_VERSION"])
     if current_branch == "main":
         yield main_version - 1, "main"
         yield main_version + 0, "main"
@@ -58,6 +73,7 @@ def _get_deploy_patches(current_branch):
     content = content.replace("<current_branch>", current_branch)
     return content
 
+
 @cli.command()
 @pass_config
 def setup(config):
@@ -68,6 +84,7 @@ def setup(config):
 @pass_config
 def status(config):
     _process(config, edit=False)
+
 
 def _process(config, edit):
     repo = Repo(os.getcwd())
@@ -84,14 +101,14 @@ def _process(config, edit):
         vbmb_exists = vbmb.exists()
         if not vbmb.exists():
             statusinfo.append(
-                'yellow', f"File {vbmb} does not exist --> workflow not initialized"
+                "yellow", f"File {vbmb} does not exist --> workflow not initialized"
             )
             if not edit:
                 _raise_error(f"Please define version in {vbmb}")
         else:
-            statusinfo.append(('green', f"File {vbmb} is set."))
+            statusinfo.append(("green", f"File {vbmb} is set."))
             main_version = float(str(float(vbmb.read_text().strip())))
-            os.environ['MAIN_VERSION'] = str(main_version)
+            os.environ["MAIN_VERSION"] = str(main_version)
         status["main"] = statusinfo
 
         for version in map(str, odoo_versions):
@@ -100,24 +117,42 @@ def _process(config, edit):
                 repo.checkout(version)
             except:
                 statusinfo.append(("yellow", "Branch missing"))
-                status[version] = statusinfo
-                continue
+                if edit:
+                    _create_branch(repo, version)
+                    statusinfo.append(("green", f"created branch {version}"))
+                    repo.checkout(version)
+                else:
+                    status[version] = statusinfo
+                    continue
             statusinfo.append(("green", "Branch exists"))
             if not vbmb_exists:
                 continue
 
             gwf = Path(github_workflow_file)
+
             def _update_gwf_file():
                 content = _get_deploy_patches(str(version))
                 gwf.parent.mkdir(parents=True, exist_ok=True)
                 gwf.write_text(content)
                 repo.X(*(git + ["add", gwf]))
-                repo.X(*(git + ["commit", "-m", "added workflow file for deploying subversion"]))
+                repo.X(
+                    *(
+                        git
+                        + [
+                            "commit",
+                            "-m",
+                            "added workflow file for deploying subversion",
+                        ]
+                    )
+                )
                 repo.X(*(git + ["push"]))
 
             if not gwf.exists():
                 statusinfo.append(
-                    ("yellow", f"File {gwf} does not exist --> workflow not initialized")
+                    (
+                        "yellow",
+                        f"File {gwf} does not exist --> workflow not initialized",
+                    )
                 )
                 if edit:
                     statusinfo.append(("green", "creating missing {gwf} file"))
@@ -133,7 +168,9 @@ def _process(config, edit):
                         statusinfo.append(("green", f"Fixxing {gwf} file."))
                         _update_gwf_file()
                     else:
-                        statusinfo.append(("red", "The content of the workflow mismatches."))
+                        statusinfo.append(
+                            ("red", "The content of the workflow mismatches.")
+                        )
 
             status[version] = statusinfo
 
