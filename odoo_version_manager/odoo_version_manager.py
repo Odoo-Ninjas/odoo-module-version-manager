@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
-from datetime import datetime
-import re
 import os
 import sys
-import time
-import arrow
-import shutil
 from pathlib import Path
-import json
-import inquirer
 import click
-import subprocess
 from . import cli
 from .config import pass_config
 from .config import Config
