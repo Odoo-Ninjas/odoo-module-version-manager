@@ -18,7 +18,6 @@ def cli(config):
     global_data['config'] = config
 
 
-from . import odoo_version_manager
 
 @cli.command()
 def install_completion():
@@ -45,3 +44,7 @@ def install_completion():
     name = Path(sys.argv[0]).name
     setup_for_shell_generic(shellingham.detect_shell()[0], name)
     sys.exit(0)
+
+from . import odoo_version_manager
+from . import gitcommands
+from . import repo
