@@ -101,7 +101,7 @@ def _process(config, edit):
         vbmb_exists = vbmb.exists()
         if not vbmb.exists():
             statusinfo.append(
-                "yellow", f"File {vbmb} does not exist --> workflow not initialized"
+                ("yellow", f"File {vbmb} does not exist --> workflow not initialized")
             )
             if not edit:
                 _raise_error(f"Please define version in {vbmb}")
@@ -145,7 +145,13 @@ def _process(config, edit):
                         ]
                     )
                 )
-                repo.X(*(git + ["push"]))
+                try:
+                    repo.X(*(git + ["pull"]))
+                    repo.X(*(git + ["push"]))
+                except:
+                    click.secho("Perhaps merge conflicts - fix git please", fg='red')
+                    repo.X(*(git + ["status"]))
+                    sys.exit(-1)
 
             if not gwf.exists():
                 statusinfo.append(
