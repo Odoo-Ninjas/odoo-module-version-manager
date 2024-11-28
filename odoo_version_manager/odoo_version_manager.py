@@ -29,16 +29,32 @@ current_dir = Path(
 )
 
 
-def _create_branch(repo, branch):
-    main_version = float(os.environ["MAIN_VERSION"])
-    branch = float(branch)
+def _setup_main_version():
+    vbmb = Path(version_behind_main_branch)
+    main_version = float(str(float(vbmb.read_text().strip())))
+    os.environ["MAIN_VERSION"] = str(main_version)
+    return main_version
 
+
+def _get_source_branch(branch, main_if_main_version=False):
+    branch = float(branch)
+    main_version = float(os.environ["MAIN_VERSION"])
     if branch < main_version:
         source_branch = branch + 1
     elif branch == main_version:
         source_branch = main_version
+        if main_if_main_version:
+            return "main"
     else:
         source_branch = branch - 1
+    return source_branch
+
+
+def _create_branch(repo, branch):
+    main_version = float(os.environ["MAIN_VERSION"])
+    branch = float(branch)
+    source_branch = _get_source_branch(branch)
+
     repo.checkout(str(source_branch), force=True)
     repo.X(*(git + ["checkout", "-b", str(branch)]))
     repo.X(*(git + ["push", "--set-upstream", "origin", str(branch)]))
@@ -86,10 +102,14 @@ def status(config):
     _process(config, edit=False)
 
 
-def _process(config, edit):
-    repo = Repo(os.getcwd())
+def _require_clean_repo(repo):
     if repo.all_dirty_files:
         _raise_error(f"Repo mustn't be dirty: {repo.all_dirty_files}")
+
+
+def _process(config, edit):
+    repo = Repo(os.getcwd())
+    _require_clean_repo(repo)
 
     remember_branch = repo.get_branch()
     try:
@@ -107,14 +127,13 @@ def _process(config, edit):
                 _raise_error(f"Please define version in {vbmb}")
         else:
             statusinfo.append(("green", f"File {vbmb} is set."))
-            main_version = float(str(float(vbmb.read_text().strip())))
-            os.environ["MAIN_VERSION"] = str(main_version)
+            main_version = _setup_main_version()
         status["main"] = statusinfo
 
         for version in map(str, odoo_versions):
             statusinfo = []
             try:
-                repo.checkout(version)
+                repo.checkout(version, True)
             except:
                 statusinfo.append(("yellow", "Branch missing"))
                 if edit:
@@ -149,7 +168,7 @@ def _process(config, edit):
                     repo.X(*(git + ["pull"]))
                     repo.X(*(git + ["push"]))
                 except:
-                    click.secho("Perhaps merge conflicts - fix git please", fg='red')
+                    click.secho("Perhaps merge conflicts - fix git please", fg="red")
                     repo.X(*(git + ["status"]))
                     sys.exit(-1)
 
@@ -189,3 +208,65 @@ def _process(config, edit):
 
     finally:
         repo.checkout(remember_branch, force=True)
+
+
+@cli.command()
+@pass_config
+@click.option(
+    "-r",
+    "--remove-intermediate-commits",
+    help="Makes rebase interactive to reduce amount of commits.",
+    is_flag=True,
+)
+def rebase(config, remove_intermediate_commits):
+    repo = Repo(os.getcwd())
+    _require_clean_repo(repo)
+    repo.checkout("main", force=True)
+    main_version = _setup_main_version()
+
+    def _rebase(branch):
+        repo.checkout(version, force=True)
+        repo.X(*(git + ["pull"]))
+        source_branch = _get_source_branch(version)
+        try:
+            repo.X(*(git + ["rebase", str(source_branch)]))
+        except:
+            gwf = Path(github_workflow_file)
+            gwf.write_text(_get_deploy_patches(branch))
+            try:
+                repo.X(*(git + ["add", str(gwf)]))
+            except:
+                pass
+            repo.X(*(git + ["status"]))
+            click.secho("Please merge changes then:", fg="yellow")
+            click.secho("git rebase --continue")
+            click.secho("git push -f")
+            sys.exit(-1)
+        else:
+            repo.X(*(git + ["push", "-f"]))
+
+        if remove_intermediate_commits:
+            source_branch2 = _get_source_branch(version, main_if_main_version=True)
+            commitsha = repo.X(
+                *(git + ["merge-base", branch, str(source_branch2)]), output=True
+            ).strip()
+            count = repo.X(
+                *(git + ["rev-list", "--count", f"{source_branch2}..{commitsha}"]), output=True
+            ).strip()
+            if count not in ("0", "1"):
+                click.secho(
+                    "Please squash all lines except first one.\nAnd push: git push -f\nWhen done please redo the rebase of the odoo version manager.",
+                    fg="yellow",
+                )
+                commitsha = repo.X(*(git + ["rebase", "-i", commitsha]))
+                sys.exit(-1)
+
+    # run upward
+    for version in map(str, odoo_versions):
+        if float(version) >= main_version:
+            _rebase(version)
+
+    # run downward
+    for version in map(str, reversed(odoo_versions)):
+        if float(version) < main_version:
+            _rebase(version)
