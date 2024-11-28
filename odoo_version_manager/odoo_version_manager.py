@@ -250,8 +250,10 @@ def rebase(config, remove_intermediate_commits):
             commitsha = repo.X(
                 *(git + ["merge-base", branch, str(source_branch2)]), output=True
             ).strip()
+            if branch == '11.0':
+                import pudb;pudb.set_trace()
             count = repo.X(
-                *(git + ["rev-list", "--count", f"{source_branch2}..{commitsha}"]), output=True
+                *(git + ["rev-list", "--count", f"{commitsha}..{branch}"]), output=True
             ).strip()
             if count not in ("0", "1"):
                 click.secho(
