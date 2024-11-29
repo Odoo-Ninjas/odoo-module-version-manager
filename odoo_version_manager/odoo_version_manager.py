@@ -91,7 +91,12 @@ def setup(config):
 
 @cli.command()
 @pass_config
-@click.option("-h", "--reset-hard", help="Pulls and resets the local branch to match origin branch. Caution: all local data lost in local branches (backup is done before)")
+@click.option(
+    "-h",
+    "--reset-hard",
+    is_flag=True,
+    help="Pulls and resets the local branch to match origin branch. Caution: all local data lost in local branches (backup is done before)",
+)
 def status(config, reset_hard):
     _process(config, edit=False, gitreset=reset_hard)
 
@@ -250,8 +255,10 @@ def rebase(config, remove_intermediate_commits):
             commitsha = repo.X(
                 *(git + ["merge-base", branch, str(source_branch2)]), output=True
             ).strip()
-            if branch == '11.0':
-                import pudb;pudb.set_trace()
+            if branch == "11.0":
+                import pudb
+
+                pudb.set_trace()
             count = repo.X(
                 *(git + ["rev-list", "--count", f"{commitsha}..{branch}"]), output=True
             ).strip()
