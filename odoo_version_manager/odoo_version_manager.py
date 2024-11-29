@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from datetime import datetime
 from pathlib import Path
 import os
 import sys
@@ -85,13 +86,14 @@ def _get_deploy_patches(current_branch):
 @cli.command()
 @pass_config
 def setup(config):
-    _process(config, edit=True)
+    _process(config, edit=True, gitreset=True)
 
 
 @cli.command()
 @pass_config
-def status(config):
-    _process(config, edit=False)
+@click.option("-h", "--reset-hard", help="Pulls and resets the local branch to match origin branch. Caution: all local data lost in local branches (backup is done before)")
+def status(config, reset_hard):
+    _process(config, edit=False, gitreset=reset_hard)
 
 
 def _require_clean_repo(repo):
@@ -99,7 +101,7 @@ def _require_clean_repo(repo):
         _raise_error(f"Repo mustn't be dirty: {repo.all_dirty_files}")
 
 
-def _process(config, edit):
+def _process(config, edit, gitreset):
     repo = Repo(os.getcwd())
     _require_clean_repo(repo)
 
@@ -121,11 +123,17 @@ def _process(config, edit):
             statusinfo.append(("green", f"File {vbmb} is set."))
             main_version = _setup_main_version()
         status["main"] = statusinfo
+        repo.X(*(git + ["fetch", "--all"]))
 
         for version in map(str, odoo_versions):
             statusinfo = []
             try:
                 repo.checkout(version, True)
+                if gitreset:
+                    date = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+                    repo.X(*(git + ["checkout", "-b", f"{version}-backup-{date}"]))
+                    repo.checkout(version, True)
+                    repo.X(*(git + ["reset", "--hard", f"origin/{version}"]))
             except:
                 statusinfo.append(("yellow", "Branch missing"))
                 if edit:
