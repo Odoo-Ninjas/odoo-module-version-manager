@@ -123,7 +123,7 @@ def _process(config, edit, gitreset):
                 ("yellow", f"File {vbmb} does not exist --> workflow not initialized")
             )
             if not edit:
-                _raise_error(f"Please define version in {vbmb}")
+                _raise_error(f"Please define version in {vbmb} e.g. echo 18.0 > {vbmb}")
         else:
             statusinfo.append(("green", f"File {vbmb} is set."))
             main_version = _setup_main_version()

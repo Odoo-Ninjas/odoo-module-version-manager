@@ -30,6 +30,7 @@ REQUIRED = [
     "click-default-group",
     "pudb",
     "pyyaml",
+    "shellingham",
 ]
 
 

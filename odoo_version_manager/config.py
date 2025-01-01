@@ -1,16 +1,7 @@
 import atexit
 import click
 import logging
-from pathlib import Path
 import sys
-import os
-from contextlib import contextmanager
-import configparser
-from paramiko.config import SSHConfig
-import subprocess
-
-BASE_PATH = Path(os.path.expanduser("~/.fetch_latest_file.d"))
-SSH_CONFIG = Path(os.path.expanduser("~/.ssh/config"))
 
 class Config(object):
     def __init__(self):
