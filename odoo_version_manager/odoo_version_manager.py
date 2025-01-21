@@ -133,6 +133,9 @@ def _process(config, edit, gitreset):
         for version in map(str, odoo_versions):
             statusinfo = []
             try:
+                all_branches = repo.get_all_branches()
+                if version not in all_branches:
+                    continue
                 repo.checkout(version, True)
                 if gitreset:
                     date = datetime.now().strftime("%Y-%m-%d_%H%M%S")
