@@ -166,7 +166,7 @@ class GitCommands(object):
 
     def simple_commit_all(self, msg="."):
         self.X(*(git + ["add", "."]))
-        self.X(*(git + ["commit", "--allow-empty", "-am", msg]))
+        self.X(*(git + ["commit", "--no-verify", "--allow-empty", "-am", msg]))
 
     @property
     def hex(self):
