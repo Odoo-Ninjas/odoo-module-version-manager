@@ -10,16 +10,42 @@ from .config import pass_config
 from .config import Config
 from .repo import Repo
 from .tools import _raise_error
-from .consts import odoo_versions, github_workflow_file, version_behind_main_branch
+from .consts import (
+    odoo_versions,
+    github_workflow_file,
+    version_behind_main_branch,
+    settings,
+)
 import subprocess
 import inspect
 import os
 from pathlib import Path
 from .consts import gitcmd as git
+import json
 
 current_dir = Path(
     os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 )
+
+
+class Settings(object):
+    def __init__(self, root_path):
+        self.root_path = root_path
+        self.path = Path(root_path) / settings
+
+    def get(self):
+        if not self.path.exists():
+            return {}
+        content = self.path.read_text()
+        return json.loads(content)
+
+    def set(self, value):
+        self.path.write_text(json.dumps(value, indent=4))
+
+    def set_value(self, key, value):
+        settings = self.get()
+        settings[key] = value
+        self.set(settings)
 
 
 def _setup_main_version():
@@ -76,16 +102,33 @@ def _get_deploy_patches(current_branch):
     mappings_source_dest = list(_get_mappings(current_branch))
     content = (current_dir / "deploy_patches.yml").read_text()
     mappings = []
+    settings = Settings(os.getcwd()).get()
     for dest, source in mappings_source_dest:
         mappings.append(f"{dest}:{source}")
-    content = content.replace("<mappings>", " ".join(mappings))
-    content = content.replace("<current_branch>", current_branch)
+    for k, v in (
+        {
+            "<mappings>": " ".join(mappings),
+            "<current_branch>": current_branch,
+            "<settings.runs_on>": settings.get("runs_on", "self-hosted"),
+        }
+    ).items():
+        content = content.replace(k, str(v))
+
     return content
 
 
 @cli.command()
 @pass_config
-def setup(config):
+@click.argument(
+    "runner_label",
+    required=False,
+    type=click.Choice(["self-hosted", "ubuntu-latest"],     case_sensitive=False,),
+)
+def setup(config, runner_label):
+    _check_default_settings()
+    S = Settings(os.getcwd())
+    if runner_label:
+        S.set_value("runs_on", runner_label)
     _process(config, edit=True, gitreset=True)
 
 
@@ -98,8 +141,15 @@ def setup(config):
     help="Pulls and resets the local branch to match origin branch. Caution: all local data lost in local branches (backup is done before)",
 )
 def status(config, reset_hard):
+    _check_default_settings()
     _process(config, edit=False, gitreset=reset_hard)
 
+
+def _check_default_settings():
+    s = Settings(os.getcwd())
+    if not s.path.exists():
+        click.secho("Creating default settings file: {s.path}", fg='yellow')
+        s.path.write_text('{"runs_on": "ubuntu-latest"}')
 
 def _require_clean_repo(repo):
     if repo.all_dirty_files:
@@ -130,7 +180,7 @@ def _process(config, edit, gitreset):
         status["main"] = statusinfo
         repo.X(*(git + ["fetch", "--all"]))
 
-        for version in ['main'] + list(map(str, odoo_versions)):
+        for version in ["main"] + list(map(str, odoo_versions)):
             statusinfo = []
             try:
                 all_branches = repo.get_all_branches()

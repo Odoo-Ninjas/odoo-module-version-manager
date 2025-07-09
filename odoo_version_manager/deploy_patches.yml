@@ -10,8 +10,9 @@ permissions: write-all
 
 jobs:
   deploy-subversions:
-    uses: Odoo-Ninjas/git-workflows/.github/workflows/deploy_to_subversions.yml@v9
+    uses: Odoo-Ninjas/git-workflows/.github/workflows/deploy_to_subversions.yml@v10
     with:
       branches: <mappings>
+      runner_label: <settings.runs_on>
     secrets:
       SSH_PRIVATE_KEY:  ${{ secrets.SSH_PRIVATE_KEY }}
