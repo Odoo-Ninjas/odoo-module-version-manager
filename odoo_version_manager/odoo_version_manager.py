@@ -217,6 +217,7 @@ def _process(config, edit, gitreset):
                         git
                         + [
                             "commit",
+                            "--no-verify",
                             "-m",
                             "added workflow file for deploying subversion",
                         ]
