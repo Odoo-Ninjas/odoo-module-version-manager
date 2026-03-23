@@ -113,14 +113,15 @@ def prepare_dir(path):
 def file_age(path):
     try:
         mtime = datetime.fromtimestamp(os.stat(path).st_mtime)
-    except:
+    except OSError:
         return 0
     return (datetime.now() - mtime).total_seconds()
 
 
 @contextmanager
 def wait_git_lock(path):
-    MAX_TIMEOUT = 3600
+    LOCK_TIMEOUT_SECONDS = 3600
+    LOCK_POLL_INTERVAL = 0.5
     from .filelock import FileLock
 
     gimera_lock = path / ".git" / "gimera.lock"
@@ -139,18 +140,18 @@ def wait_git_lock(path):
         yield
     else:
         while lock_exists():
-            if file_age(index_lock) > MAX_TIMEOUT:
+            if file_age(index_lock) > LOCK_TIMEOUT_SECONDS:
                 index_lock.unlink()
                 continue
 
-            if gimera_lock and file_age(gimera_lock) > MAX_TIMEOUT:
+            if gimera_lock and file_age(gimera_lock) > LOCK_TIMEOUT_SECONDS:
                 gimera_lock.unlink()
                 continue
 
-            time.sleep(0.5)
+            time.sleep(LOCK_POLL_INTERVAL)
 
         if gimera_lock:
-            with FileLock(gimera_lock, timeout=MAX_TIMEOUT):
+            with FileLock(gimera_lock, timeout=LOCK_TIMEOUT_SECONDS):
                 yield
         else:
             yield
@@ -159,7 +160,7 @@ def wait_git_lock(path):
 def rmtree(path):
     try:
         shutil.rmtree(path)
-    except:
+    except OSError:
         click.secho(f"Failed to remove {path}", fg="red")
         sys.exit(-1)
 
@@ -222,7 +223,7 @@ def path1inpath2(path1, path2):
     try:
         path1.relative_to(path2)
         return True
-    except:
+    except ValueError:
         return False
 
 
@@ -312,7 +313,7 @@ def _make_sure_hidden_gimera_dir(root_dir):
             if repo.staged_files:
                 _raise_error("No staged files allowed, when changing .gitignore")
             repo.X(*(git + ["add", ".gitignore"]))
-            repo.X(*(git + ["commit", "--no-verify", "-m", "add .gimera to .gitignore"]))
+            repo.X(*(git + ["commit", "-m", "add .gimera to .gitignore"]))
     return root_dir / ".gimera"
 
 

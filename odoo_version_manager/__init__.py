@@ -24,7 +24,7 @@ def install_completion():
     def setup_for_shell_generic(shell, shell_call):
         path = Path(f"/etc/{shell}_completion.d")
         NAME = shell_call.upper().replace("-", "_")
-        completion = subprocess.check_output([sys.argv[0]], env={f"_{NAME}_COMPLETE": f"{shell}_source"}, shell=True)
+        completion = subprocess.check_output([sys.argv[0]], env={f"_{NAME}_COMPLETE": f"{shell}_source"})
         if path.exists():
             if os.access(path, os.W_OK):
                 (path / shell_call).write_bytes(completion)

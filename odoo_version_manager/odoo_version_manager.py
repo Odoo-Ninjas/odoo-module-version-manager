@@ -3,7 +3,9 @@ from datetime import datetime
 from pathlib import Path
 import os
 import sys
-from pathlib import Path
+import subprocess
+import inspect
+import json
 import click
 from . import cli
 from .config import pass_config
@@ -16,12 +18,7 @@ from .consts import (
     version_behind_main_branch,
     settings,
 )
-import subprocess
-import inspect
-import os
-from pathlib import Path
 from .consts import gitcmd as git
-import json
 
 current_dir = Path(
     os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -50,7 +47,13 @@ class Settings(object):
 
 def _setup_main_version():
     vbmb = Path(version_behind_main_branch)
-    main_version = float(str(float(vbmb.read_text().strip())))
+    raw = vbmb.read_text().strip()
+    try:
+        main_version = float(raw)
+    except ValueError:
+        _raise_error(f"Invalid version in {vbmb}: {raw!r} (expected a number like 18.0)")
+    if main_version not in odoo_versions:
+        _raise_error(f"Unknown Odoo version {main_version} in {vbmb}. Supported: {odoo_versions}")
     os.environ["MAIN_VERSION"] = str(main_version)
     return main_version
 
@@ -148,7 +151,7 @@ def status(config, reset_hard):
 def _check_default_settings():
     s = Settings(os.getcwd())
     if not s.path.exists():
-        click.secho("Creating default settings file: {s.path}", fg='yellow')
+        click.secho(f"Creating default settings file: {s.path}", fg='yellow')
         s.path.write_text('{"runs_on": "ubuntu-latest"}')
 
 def _require_clean_repo(repo):
@@ -192,7 +195,7 @@ def _process(config, edit, gitreset):
                     repo.X(*(git + ["checkout", "-b", f"{version}-backup-{date}"]))
                     repo.checkout(version, True)
                     repo.X(*(git + ["reset", "--hard", f"origin/{version}"]))
-            except:
+            except Exception:
                 statusinfo.append(("yellow", "Branch missing"))
                 if edit:
                     _create_branch(repo, version)
@@ -217,7 +220,6 @@ def _process(config, edit, gitreset):
                         git
                         + [
                             "commit",
-                            "--no-verify",
                             "-m",
                             "added workflow file for deploying subversion",
                         ]
@@ -226,7 +228,7 @@ def _process(config, edit, gitreset):
                 try:
                     repo.X(*(git + ["pull"]))
                     repo.X(*(git + ["push"]))
-                except:
+                except subprocess.CalledProcessError:
                     click.secho("Perhaps merge conflicts - fix git please", fg="red")
                     repo.X(*(git + ["status"]))
                     sys.exit(-1)
@@ -239,7 +241,7 @@ def _process(config, edit, gitreset):
                     )
                 )
                 if edit:
-                    statusinfo.append(("green", "creating missing {gwf} file"))
+                    statusinfo.append(("green", f"creating missing {gwf} file"))
                     _update_gwf_file()
 
             else:
@@ -289,12 +291,12 @@ def rebase(config, remove_intermediate_commits):
         source_branch = _get_source_branch(version)
         try:
             repo.X(*(git + ["rebase", str(source_branch)]))
-        except:
+        except subprocess.CalledProcessError:
             gwf = Path(github_workflow_file)
             gwf.write_text(_get_deploy_patches(branch))
             try:
                 repo.X(*(git + ["add", str(gwf)]))
-            except:
+            except subprocess.CalledProcessError:
                 pass
             repo.X(*(git + ["status"]))
             click.secho("Please merge changes then:", fg="yellow")
