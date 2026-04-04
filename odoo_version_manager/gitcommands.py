@@ -108,10 +108,6 @@ class GitCommands(object):
         for file in self.untracked_files:
             yield self.path_absolute / file
 
-    @property
-    def dirty(self):
-        return bool(list(self._parse_git_status()))
-
     def is_submodule(self, path):
         path = self._combine(path)
         for line in X(
@@ -142,8 +138,7 @@ class GitCommands(object):
         2e45846285c6afc396a7bbadaa9dad54360ed51c refs/remotes/origin/main
         2e45846285c6afc396a7bbadaa9dad54360ed51c refs/remotes/origin/test123
         """
-        res = list(
-            set(
+        res = sorted(set(
             filter(
                 lambda x: x not in ["HEAD"],
                 map(
@@ -151,18 +146,12 @@ class GitCommands(object):
                     self.out(*(git + ["show-ref"])).splitlines(),
                 ),
             )
-            )
-        )
+        ))
         return res
 
     @property
     def dirty(self):
-        files = []
-        for modifier, path in self._parse_git_status():
-            if str(path) == "gimera.yml":
-                continue
-            files.append(path)
-        return bool(files)
+        return bool(list(self._parse_git_status()))
 
     def simple_commit_all(self, msg="."):
         self.X(*(git + ["add", "."]))

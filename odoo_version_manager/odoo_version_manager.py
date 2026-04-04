@@ -47,6 +47,8 @@ class Settings(object):
 
 def _setup_main_version():
     vbmb = Path(version_behind_main_branch)
+    if not vbmb.exists():
+        _raise_error(f"File {vbmb} does not exist. Please create it first, e.g.: echo 18.0 > {vbmb}")
     raw = vbmb.read_text().strip()
     try:
         main_version = float(raw)
@@ -152,11 +154,85 @@ def _check_default_settings():
     s = Settings(os.getcwd())
     if not s.path.exists():
         click.secho(f"Creating default settings file: {s.path}", fg='yellow')
+        s.path.parent.mkdir(parents=True, exist_ok=True)
         s.path.write_text('{"runs_on": "ubuntu-latest"}')
 
 def _require_clean_repo(repo):
     if repo.all_dirty_files:
         _raise_error(f"Repo mustn't be dirty: {repo.all_dirty_files}")
+
+
+def _check_main_version(edit):
+    statusinfo = []
+    vbmb = Path(version_behind_main_branch)
+    vbmb_exists = vbmb.exists()
+    if not vbmb_exists:
+        statusinfo.append(
+            ("yellow", f"File {vbmb} does not exist --> workflow not initialized")
+        )
+        if not edit:
+            _raise_error(f"Please define version in {vbmb} e.g. echo 18.0 > {vbmb}")
+    else:
+        statusinfo.append(("green", f"File {vbmb} is set."))
+    return statusinfo, vbmb_exists
+
+
+def _checkout_version(repo, version, gitreset):
+    all_branches = repo.get_all_branches()
+    if version not in all_branches:
+        return None
+    repo.checkout(version, True)
+    if gitreset:
+        date = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        repo.X(*(git + ["checkout", "-b", f"{version}-backup-{date}"]))
+        repo.checkout(version, True)
+        repo.X(*(git + ["reset", "--hard", f"origin/{version}"]))
+
+
+def _update_gwf_file(repo, version):
+    gwf = Path(github_workflow_file)
+    content = _get_deploy_patches(str(version))
+    gwf.parent.mkdir(parents=True, exist_ok=True)
+    gwf.write_text(content)
+    repo.X(*(git + ["add", gwf]))
+    repo.X(*(git + ["commit", "-m", "added workflow file for deploying subversion"]))
+    try:
+        repo.X(*(git + ["pull"]))
+        repo.X(*(git + ["push"]))
+    except subprocess.CalledProcessError:
+        click.secho("Perhaps merge conflicts - fix git please", fg="red")
+        repo.X(*(git + ["status"]))
+        sys.exit(-1)
+
+
+def _check_workflow(repo, version, edit):
+    statusinfo = []
+    gwf = Path(github_workflow_file)
+    if not gwf.exists():
+        statusinfo.append(
+            ("yellow", f"File {gwf} does not exist --> workflow not initialized")
+        )
+        if edit:
+            statusinfo.append(("green", f"creating missing {gwf} file"))
+            _update_gwf_file(repo, version)
+    else:
+        statusinfo.append(("green", "Workflow initialized"))
+        content = _get_deploy_patches(str(version))
+        if gwf.read_text().strip() != content.strip():
+            if edit:
+                statusinfo.append(("green", f"Fixxing {gwf} file."))
+                _update_gwf_file(repo, version)
+            else:
+                statusinfo.append(("red", "The content of the workflow mismatches."))
+    return statusinfo
+
+
+def _print_status(status):
+    click.secho("----------------------------------", fg="red")
+    for branch, info in sorted(status.items(), key=lambda x: x[0]):
+        click.secho(f"Branch {branch}:", fg="green", bold=True)
+        for color, line in info:
+            click.secho("\t" + line, fg=color)
 
 
 def _process(config, edit, gitreset):
@@ -165,36 +241,19 @@ def _process(config, edit, gitreset):
 
     remember_branch = repo.get_branch()
     try:
-
         status = {}
-        statusinfo = []
         repo.checkout("main", force=True)
-        vbmb = Path(version_behind_main_branch)
-        vbmb_exists = vbmb.exists()
-        if not vbmb.exists():
-            statusinfo.append(
-                ("yellow", f"File {vbmb} does not exist --> workflow not initialized")
-            )
-            if not edit:
-                _raise_error(f"Please define version in {vbmb} e.g. echo 18.0 > {vbmb}")
-        else:
-            statusinfo.append(("green", f"File {vbmb} is set."))
-            main_version = _setup_main_version()
-        status["main"] = statusinfo
+        main_statusinfo, vbmb_exists = _check_main_version(edit)
+        if vbmb_exists:
+            _setup_main_version()
+        status["main"] = main_statusinfo
         repo.X(*(git + ["fetch", "--all"]))
 
         for version in ["main"] + list(map(str, odoo_versions)):
             statusinfo = []
             try:
-                all_branches = repo.get_all_branches()
-                if version not in all_branches:
+                if _checkout_version(repo, version, gitreset) is None:
                     continue
-                repo.checkout(version, True)
-                if gitreset:
-                    date = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-                    repo.X(*(git + ["checkout", "-b", f"{version}-backup-{date}"]))
-                    repo.checkout(version, True)
-                    repo.X(*(git + ["reset", "--hard", f"origin/{version}"]))
             except Exception:
                 statusinfo.append(("yellow", "Branch missing"))
                 if edit:
@@ -205,68 +264,11 @@ def _process(config, edit, gitreset):
                     status[version] = statusinfo
                     continue
             statusinfo.append(("green", "Branch exists"))
-            if not vbmb_exists:
-                continue
-
-            gwf = Path(github_workflow_file)
-
-            def _update_gwf_file():
-                content = _get_deploy_patches(str(version))
-                gwf.parent.mkdir(parents=True, exist_ok=True)
-                gwf.write_text(content)
-                repo.X(*(git + ["add", gwf]))
-                repo.X(
-                    *(
-                        git
-                        + [
-                            "commit",
-                            "-m",
-                            "added workflow file for deploying subversion",
-                        ]
-                    )
-                )
-                try:
-                    repo.X(*(git + ["pull"]))
-                    repo.X(*(git + ["push"]))
-                except subprocess.CalledProcessError:
-                    click.secho("Perhaps merge conflicts - fix git please", fg="red")
-                    repo.X(*(git + ["status"]))
-                    sys.exit(-1)
-
-            if not gwf.exists():
-                statusinfo.append(
-                    (
-                        "yellow",
-                        f"File {gwf} does not exist --> workflow not initialized",
-                    )
-                )
-                if edit:
-                    statusinfo.append(("green", f"creating missing {gwf} file"))
-                    _update_gwf_file()
-
-            else:
-                statusinfo.append(("green", "Workflow initialized"))
-
-                content = _get_deploy_patches(str(version))
-                content_ok = gwf.read_text().strip() == content.strip()
-                if not content_ok:
-                    if edit:
-                        statusinfo.append(("green", f"Fixxing {gwf} file."))
-                        _update_gwf_file()
-                    else:
-                        statusinfo.append(
-                            ("red", "The content of the workflow mismatches.")
-                        )
-
+            if vbmb_exists:
+                statusinfo += _check_workflow(repo, version, edit)
             status[version] = statusinfo
 
-        click.secho("----------------------------------", fg="red")
-        for branch, info in sorted(status.items(), key=lambda x: x[0]):
-            click.secho(f"Branch {branch}:", fg="green", bold=True)
-            for line in info:
-                color, line = line
-                click.secho("\t" + line, fg=color)
-
+        _print_status(status)
     finally:
         repo.checkout(remember_branch, force=True)
 
@@ -285,49 +287,58 @@ def rebase(config, remove_intermediate_commits):
     repo.checkout("main", force=True)
     main_version = _setup_main_version()
 
-    def _rebase(branch):
-        repo.checkout(version, force=True)
-        repo.X(*(git + ["pull"]))
-        source_branch = _get_source_branch(version)
-        try:
-            repo.X(*(git + ["rebase", str(source_branch)]))
-        except subprocess.CalledProcessError:
-            gwf = Path(github_workflow_file)
-            gwf.write_text(_get_deploy_patches(branch))
-            try:
-                repo.X(*(git + ["add", str(gwf)]))
-            except subprocess.CalledProcessError:
-                pass
-            repo.X(*(git + ["status"]))
-            click.secho("Please merge changes then:", fg="yellow")
-            click.secho("git rebase --continue")
-            click.secho("git push -f")
-            sys.exit(-1)
-        else:
-            repo.X(*(git + ["push", "-f"]))
-
-        if remove_intermediate_commits:
-            source_branch2 = _get_source_branch(version, main_if_main_version=True)
-            commitsha = repo.X(
-                *(git + ["merge-base", branch, str(source_branch2)]), output=True
-            ).strip()
-            count = repo.X(
-                *(git + ["rev-list", "--count", f"{commitsha}..{branch}"]), output=True
-            ).strip()
-            if count not in ("0", "1"):
-                click.secho(
-                    "Please squash all lines except first one.\nAnd push: git push -f\nWhen done please redo the rebase of the odoo version manager.",
-                    fg="yellow",
-                )
-                commitsha = repo.X(*(git + ["rebase", "-i", commitsha]))
-                sys.exit(-1)
-
     # run upward
     for version in map(str, odoo_versions):
         if float(version) >= main_version:
-            _rebase(version)
+            _rebase_branch(repo, version, remove_intermediate_commits)
 
     # run downward
     for version in map(str, reversed(odoo_versions)):
         if float(version) < main_version:
-            _rebase(version)
+            _rebase_branch(repo, version, remove_intermediate_commits)
+
+
+def _rebase_branch(repo, branch, remove_intermediate_commits):
+    repo.checkout(branch, force=True)
+    repo.X(*(git + ["pull"]))
+    source_branch = _get_source_branch(branch)
+    try:
+        repo.X(*(git + ["rebase", str(source_branch)]))
+    except subprocess.CalledProcessError:
+        _handle_rebase_conflict(repo, branch)
+    else:
+        repo.X(*(git + ["push", "-f"]))
+
+    if remove_intermediate_commits:
+        _squash_intermediate_commits(repo, branch)
+
+
+def _handle_rebase_conflict(repo, branch):
+    gwf = Path(github_workflow_file)
+    gwf.write_text(_get_deploy_patches(branch))
+    try:
+        repo.X(*(git + ["add", str(gwf)]))
+    except subprocess.CalledProcessError:
+        pass
+    repo.X(*(git + ["status"]))
+    click.secho("Please merge changes then:", fg="yellow")
+    click.secho("git rebase --continue")
+    click.secho("git push -f")
+    sys.exit(-1)
+
+
+def _squash_intermediate_commits(repo, branch):
+    source_branch2 = _get_source_branch(branch, main_if_main_version=True)
+    commitsha = repo.X(
+        *(git + ["merge-base", branch, str(source_branch2)]), output=True
+    ).strip()
+    count = repo.X(
+        *(git + ["rev-list", "--count", f"{commitsha}..{branch}"]), output=True
+    ).strip()
+    if count not in ("0", "1"):
+        click.secho(
+            "Please squash all lines except first one.\nAnd push: git push -f\nWhen done please redo the rebase of the odoo version manager.",
+            fg="yellow",
+        )
+        repo.X(*(git + ["rebase", "-i", commitsha]))
+        sys.exit(-1)

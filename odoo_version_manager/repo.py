@@ -135,58 +135,10 @@ class Repo(GitCommands):
     def force_remove_submodule(self, path):
         # https://github.com/jeremysears/scripts/blob/master/bin/git-submodule-rewrite
         self.please_no_staged_files()
+        self._check_submodule_not_dirty(path)
+        self._remove_submodule_config(path)
 
-        # if there are dirty files, then abort to not destroy data
-        dirty_files = list(
-            filter_files_to_folders(
-                self.all_dirty_files_absolute,
-                [self.path_absolute / path],
-            )
-        )
-        if dirty_files:
-            if not is_forced():
-                _raise_error(f"Path is dirty: {path}. Changes would be lost.")
         fullpath = self.path / path
-        if fullpath.exists():
-            self.X(
-                *(
-                    git
-                    + [
-                        "config",
-                        "-f",
-                        ".gitmodules",
-                        "--remove-section",
-                        f"submodule.{path}",
-                    ]
-                ),
-                allow_error=True,
-            )
-            if self.out(
-                *(
-                    git
-                    + [
-                        "config",
-                        "-f",
-                        self.configdir / "config",
-                        "--get",
-                        f"submodule.{path}.url",
-                    ]
-                ),
-                allow_error=True,
-            ):
-                self.X(
-                    *(
-                        git
-                        + [
-                            "config",
-                            "-f",
-                            self.configdir / "config",
-                            "--remove-section",
-                            f"submodule.{path}",
-                        ]
-                    )
-                )
-
         subrepo = Repo(self.path / path)
         self.X("rm", "-rf", path)
         if fullpath.exists():
@@ -199,6 +151,39 @@ class Repo(GitCommands):
         if self.staged_files:
             self.X(*(git + ["commit", "-m", f"removed submodule {path}"]))
         self.X("rm", "-rf", f".git/modules/{subrepo.rel_path_to_root_repo}")
+
+    def _check_submodule_not_dirty(self, path):
+        dirty_files = list(
+            filter_files_to_folders(
+                self.all_dirty_files_absolute,
+                [self.path_absolute / path],
+            )
+        )
+        if dirty_files and not is_forced():
+            _raise_error(f"Path is dirty: {path}. Changes would be lost.")
+
+    def _remove_submodule_config(self, path):
+        fullpath = self.path / path
+        if not fullpath.exists():
+            return
+        self.X(
+            *(git + [
+                "config", "-f", ".gitmodules",
+                "--remove-section", f"submodule.{path}",
+            ]),
+            allow_error=True,
+        )
+        if self.out(
+            *(git + [
+                "config", "-f", self.configdir / "config",
+                "--get", f"submodule.{path}.url",
+            ]),
+            allow_error=True,
+        ):
+            self.X(*(git + [
+                "config", "-f", self.configdir / "config",
+                "--remove-section", f"submodule.{path}",
+            ]))
 
     @property
     def next_module_root(self):
@@ -239,51 +224,6 @@ class Repo(GitCommands):
             return False
         else:
             return True
-
-    def _fix_to_remove_subdirectories(self, config):
-        # https://stackoverflow.com/questions/4185365/no-submodule-mapping-found-in-gitmodule-for-a-path-thats-not-a-submodule
-        # commands may block
-        # git submodule--helper works and shows something
-        # git submodule says: fatal: no submodule mapping found in .gitmodules
-        # there is special folder with id 16000 then, then must be removed with git rm
-        # then; not tested, because then it suddenly worked
-        lines = [
-            x
-            for x in self.out(*(git + ["ls-files", "--stage"])).splitlines()
-            if x.strip().startswith("160000")
-        ]
-        # 160000 5e8add9536e584f73ea25d4cf51577832d480e90 0       addons_robot
-        for line in lines:
-            linepath = line.split("\t", 1)[1]
-            path = self.path / linepath
-            if path.exists():
-                from .gimera import REPO_TYPE_SUB
-
-                if not [
-                    x
-                    for x in config.repos
-                    if x.path == path and x.ttype == REPO_TYPE_SUB
-                ]:
-                    continue
-                self.please_no_staged_files()
-                # if .gitmodules is dirty then commit that first, otherwise:
-                # fatal: please stage your changes to .gitmodules or stash them to proceed
-                if (self.path / ".gitmodules") in self.all_dirty_files:
-                    self.X(*(git + ["add", ".gitmodules"]))
-                    self.X(
-                        *(
-                            git
-                            + [
-                                "commit",
-                                "-m",
-                                "gimera fix to removed subdirs: .gitmodules",
-                            ]
-                        )
-                    )
-                self.X(*(git + ["rm", "-f", linepath]))
-                self.X(
-                    *(git + ["commit", "-m", f"removed invalid subrepo: {linepath}"])
-                )
 
     def get_submodule(self, path):
         for submodule in self.get_submodules():

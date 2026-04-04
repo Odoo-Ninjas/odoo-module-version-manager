@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import click
 import sys
-from curses import wrapper
 from contextlib import contextmanager
 
 
