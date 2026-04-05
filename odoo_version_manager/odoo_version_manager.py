@@ -187,6 +187,7 @@ def _checkout_version(repo, version, gitreset):
         repo.X(*(git + ["checkout", "-b", f"{version}-backup-{date}"]))
         repo.checkout(version, True)
         repo.X(*(git + ["reset", "--hard", f"origin/{version}"]))
+    return True
 
 
 def _update_gwf_file(repo, version):
