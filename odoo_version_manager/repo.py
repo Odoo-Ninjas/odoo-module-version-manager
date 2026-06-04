@@ -149,7 +149,9 @@ class Repo(GitCommands):
             self.X(*(git + ["add", "-A", ".gitmodules"]))
 
         if self.staged_files:
-            self.X(*(git + ["commit", "-m", f"removed submodule {path}"]))
+            self.X(
+                *(git + ["commit", "--no-verify", "-m", f"removed submodule {path}"])
+            )
         self.X("rm", "-rf", f".git/modules/{subrepo.rel_path_to_root_repo}")
 
     def _check_submodule_not_dirty(self, path):
@@ -389,6 +391,7 @@ class Repo(GitCommands):
                         git
                         + [
                             "commit",
+                            "--no-verify",
                             "-m",
                             commit_msg,
                         ]

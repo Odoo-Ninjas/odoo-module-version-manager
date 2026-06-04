@@ -120,7 +120,8 @@ def _get_deploy_patches(current_branch):
         {
             "<mappings>": " ".join(mappings),
             "<current_branch>": current_branch,
-            "<settings.runs_on>": settings.get("runs_on", "self-hosted"),
+            # keep fallback in sync with default written by _check_default_settings
+            "<settings.runs_on>": settings.get("runs_on", "ubuntu-latest"),
         }
     ).items():
         content = content.replace(k, str(v))

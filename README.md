@@ -15,11 +15,35 @@ odoo-version-manager completion -x
 ## initial setup
 
 - create a repository like an OCA repository with some modules on branch **main**
-- decide which version the main branch is for example 16.0
+- decide which version the main branch is for example 16.0 and store it:
 
+```bash
+echo 16.0 > .github/version_behind_main_branch
+odoo-version-manager setup
 ```
-odoo-version-manager setup 16.0
+
+`setup` takes an optional runner label for the generated github workflow
+(`self-hosted` or `ubuntu-latest`, default: `ubuntu-latest`):
+
+```bash
+odoo-version-manager setup self-hosted
 ```
+
+## settings file
+
+Settings are stored per repository in `.github/odoo-version-manager.settings.json`
+(created automatically on first run):
+
+```json
+{"runs_on": "ubuntu-latest"}
+```
+
+- `runs_on`: runner label used in the generated deploy workflow. Use
+  `self-hosted` if the `SSH_PRIVATE_KEY` secret should never leave your own
+  infrastructure.
+
+The generated workflow requires the repository secret `SSH_PRIVATE_KEY` to
+push to the version branches.
 
 ## set another odoo version for main branch
 

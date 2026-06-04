@@ -6,11 +6,15 @@ on:
     branches:
       - <current_branch>
 
-permissions: write-all
+# minimal permissions: push happens via SSH_PRIVATE_KEY, the token is
+# only used by the reusable workflow to create issues on rebase conflicts
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   deploy-subversions:
-    uses: Odoo-Ninjas/git-workflows/.github/workflows/deploy_to_subversions.yml@v9.19
+    uses: Odoo-Ninjas/git-workflows/.github/workflows/deploy_to_subversions.yml@35306346ba697a710c92e37cc7121d9c5f250011 # v9.19
     with:
       branches: <mappings>
       runner_label: <settings.runs_on>
