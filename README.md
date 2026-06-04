@@ -7,7 +7,7 @@ It uses github workflows to accomplish this.
 
 ```bash
 pipx install odoo-version-manager
-odoo-version-manager completion -x
+odoo-version-manager install-completion
 ```
 
 # usage
@@ -18,12 +18,14 @@ odoo-version-manager completion -x
 - decide which version the main branch is for example 16.0 and store it:
 
 ```bash
+mkdir -p .github
 echo 16.0 > .github/version_behind_main_branch
 odoo-version-manager setup
 ```
 
 `setup` takes an optional runner label for the generated github workflow
-(`self-hosted` or `ubuntu-latest`, default: `ubuntu-latest`):
+(`self-hosted` or `ubuntu-latest`, default: `ubuntu-latest`). It is stored
+persistently in the settings file:
 
 ```bash
 odoo-version-manager setup self-hosted
