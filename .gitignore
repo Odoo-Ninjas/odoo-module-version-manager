@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# runtime artifact of odoo-version-manager itself
+.github/odoo-version-manager.settings.json
+.github/version_behind_main_branch
