@@ -1,5 +1,5 @@
 # .github/workflows/flow1.yml
-name: Deploy fixes to other versions with rebase main
+name: Deploy fixes to other versions
 
 on:
   push:

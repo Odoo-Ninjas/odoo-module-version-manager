@@ -66,18 +66,15 @@ def _setup_main_version():
     return main_version
 
 
-def _get_source_branch(branch, main_if_main_version=False):
+def _get_source_branch(branch):
     branch = float(branch)
     main_version = float(os.environ["MAIN_VERSION"])
-    if branch < main_version:
-        source_branch = branch + 1
-    elif branch == main_version:
-        source_branch = main_version
-        if main_if_main_version:
-            return "main"
+    if branch == main_version:
+        return None  # root branch, no source
+    elif branch < main_version:
+        return branch + 1
     else:
-        source_branch = branch - 1
-    return source_branch
+        return branch - 1
 
 
 def _create_branch(repo, branch):
@@ -91,17 +88,17 @@ def _create_branch(repo, branch):
 
 
 def _get_mappings(current_branch):
-    vbmb = Path(version_behind_main_branch)
     main_version = float(os.environ["MAIN_VERSION"])
-    if current_branch == "main":
-        yield main_version - 1, "main"
-        yield main_version + 0, "main"
-        yield main_version + 1, "main"
+    current_branch = float(current_branch)
+    if current_branch < main_version:
+        yield current_branch - 1, current_branch
+    elif current_branch > main_version:
+        yield current_branch + 1, current_branch
     else:
-        current_branch = float(current_branch)
-        if current_branch < main_version:
+        # root branch: deploy to both direct neighbors
+        if current_branch - 1 in odoo_versions:
             yield current_branch - 1, current_branch
-        elif current_branch > main_version:
+        if current_branch + 1 in odoo_versions:
             yield current_branch + 1, current_branch
 
 
@@ -171,6 +168,68 @@ def _check_default_settings():
 def _require_clean_repo(repo):
     if repo.all_dirty_files:
         _raise_error(f"Repo mustn't be dirty: {repo.all_dirty_files}")
+
+
+def _get_github_branches_url(repo):
+    try:
+        url = repo.X(*(git + ["remote", "get-url", "origin"]), output=True).strip()
+        if url.startswith("git@github.com:"):
+            url = "https://github.com/" + url[len("git@github.com:"):]
+        if url.endswith(".git"):
+            url = url[:-4]
+        if "github.com" in url:
+            return url + "/branches"
+    except Exception:
+        pass
+    return None
+
+
+def _check_no_main_branch(repo):
+    all_branches = repo.get_all_branches()
+    if "main" not in all_branches:
+        return
+
+    main_version = os.environ.get("MAIN_VERSION")
+    has_drift = False
+    commits_only_in_main = 0
+    commits_only_in_version = 0
+
+    if main_version:
+        try:
+            only_in_main = repo.X(
+                *(git + ["log", "--oneline", f"{main_version}..main"]), output=True
+            ).strip()
+            only_in_version = repo.X(
+                *(git + ["log", "--oneline", f"main..{main_version}"]), output=True
+            ).strip()
+            commits_only_in_main = len([l for l in only_in_main.splitlines() if l])
+            commits_only_in_version = len([l for l in only_in_version.splitlines() if l])
+            has_drift = commits_only_in_main > 0 or commits_only_in_version > 0
+        except Exception:
+            pass
+
+    github_url = _get_github_branches_url(repo)
+
+    click.secho("\n" + "=" * 60, fg="red")
+    if has_drift and main_version:
+        click.secho(
+            f"  FEHLER: Branch 'main' existiert und hat Drift zu '{main_version}'!",
+            fg="red", bold=True,
+        )
+        click.secho(f"  Commits nur in main:         {commits_only_in_main}", fg="red")
+        click.secho(f"  Commits nur in {main_version}:  {commits_only_in_version}", fg="red")
+    else:
+        click.secho(
+            "  WARNUNG: Branch 'main' existiert noch und muss gelöscht werden.",
+            fg="yellow", bold=True,
+        )
+    click.secho("=" * 60, fg="red")
+    click.secho("  → Lokal löschen:  git branch -D main", fg="yellow")
+    click.secho("  → Remote löschen: git push origin --delete main", fg="yellow")
+    if github_url:
+        click.secho(f"  → GitHub Branches: {github_url}", fg="cyan")
+    click.secho("=" * 60 + "\n", fg="red")
+    sys.exit(-1)
 
 
 def _check_main_version(edit):
@@ -264,14 +323,14 @@ def _process(config, edit, gitreset):
     remember_branch = repo.get_branch()
     try:
         status = {}
-        repo.checkout("main", force=True)
         main_statusinfo, vbmb_exists = _check_main_version(edit)
         if vbmb_exists:
             _setup_main_version()
-        status["main"] = main_statusinfo
+        status["config"] = main_statusinfo
+        _check_no_main_branch(repo)
         repo.X(*(git + ["fetch", "--all"]))
 
-        for version in ["main"] + list(map(str, odoo_versions)):
+        for version in list(map(str, odoo_versions)):
             statusinfo = []
             try:
                 if _checkout_version(repo, version, gitreset) is None:
@@ -306,8 +365,8 @@ def _process(config, edit, gitreset):
 def rebase(config, remove_intermediate_commits):
     repo = Repo(os.getcwd())
     _require_clean_repo(repo)
-    repo.checkout("main", force=True)
     main_version = _setup_main_version()
+    _check_no_main_branch(repo)
 
     # run upward
     for version in map(str, odoo_versions):
@@ -321,9 +380,12 @@ def rebase(config, remove_intermediate_commits):
 
 
 def _rebase_branch(repo, branch, remove_intermediate_commits):
+    source_branch = _get_source_branch(branch)
+    if source_branch is None:
+        click.secho(f"  Skipping {branch} (root branch, no rebase source)", fg="cyan")
+        return
     repo.checkout(branch, force=True)
     repo.X(*(git + ["pull"]))
-    source_branch = _get_source_branch(branch)
     try:
         repo.X(*(git + ["rebase", str(source_branch)]))
     except subprocess.CalledProcessError:
@@ -350,7 +412,9 @@ def _handle_rebase_conflict(repo, branch):
 
 
 def _squash_intermediate_commits(repo, branch):
-    source_branch2 = _get_source_branch(branch, main_if_main_version=True)
+    source_branch2 = _get_source_branch(branch)
+    if source_branch2 is None:
+        return
     commitsha = repo.X(
         *(git + ["merge-base", branch, str(source_branch2)]), output=True
     ).strip()
