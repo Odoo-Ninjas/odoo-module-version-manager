@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from odoo_version_manager.odoo_version_manager import (
     _get_source_branch,
     _get_mappings,
+    _get_deploy_patches,
     _get_github_branches_url,
     _check_no_main_branch,
 )
@@ -70,6 +71,18 @@ class TestGetMappings:
         monkeypatch.setenv("MAIN_VERSION", "19.0")
         mappings = list(_get_mappings("19.0"))
         assert mappings == [(18.0, 19.0), (20.0, 19.0)]
+
+    def test_highest_above_root_maps_nothing(self, monkeypatch):
+        monkeypatch.setenv("MAIN_VERSION", "19.0")
+        assert list(_get_mappings("20.0")) == []
+
+    def test_lowest_below_root_maps_nothing(self, monkeypatch):
+        monkeypatch.setenv("MAIN_VERSION", "19.0")
+        assert list(_get_mappings("11.0")) == []
+
+    def test_deploy_patches_without_mappings_is_empty_string(self, monkeypatch):
+        monkeypatch.setenv("MAIN_VERSION", "19.0")
+        assert 'branches: ""' in _get_deploy_patches("20.0")
 
 
 # ---------------------------------------------------------------------------
