@@ -91,15 +91,16 @@ def _get_mappings(current_branch):
     main_version = float(os.environ["MAIN_VERSION"])
     current_branch = float(current_branch)
     if current_branch < main_version:
-        yield current_branch - 1, current_branch
+        dests = [current_branch - 1]
     elif current_branch > main_version:
-        yield current_branch + 1, current_branch
+        dests = [current_branch + 1]
     else:
         # root branch: deploy to both direct neighbors
-        if current_branch - 1 in odoo_versions:
-            yield current_branch - 1, current_branch
-        if current_branch + 1 in odoo_versions:
-            yield current_branch + 1, current_branch
+        dests = [current_branch - 1, current_branch + 1]
+    # never deploy to unknown versions - the workflow would create e.g. 10.0 or 21.0
+    for dest in dests:
+        if dest in odoo_versions:
+            yield dest, current_branch
 
 
 def _get_deploy_patches(current_branch):
@@ -115,7 +116,8 @@ def _get_deploy_patches(current_branch):
         mappings.append(f"{dest}:{source}")
     for k, v in (
         {
-            "<mappings>": " ".join(mappings),
+            # empty yaml value would be null and fail the required input
+            "<mappings>": " ".join(mappings) or '""',
             "<current_branch>": current_branch,
             # keep fallback in sync with default written by _check_default_settings
             "<settings.runs_on>": settings.get("runs_on", "ubuntu-latest"),
