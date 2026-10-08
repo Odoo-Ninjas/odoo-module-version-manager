@@ -1,12 +1,12 @@
 # odoo-version-manager
 
-Manages Odoo modules across multiple version branches (11.0–19.0).
+Manages Odoo modules across multiple version branches (11.0–20.0).
 Changes on the root version branch are automatically deployed to all other branches via GitHub Actions + rebase.
 
 There is **no `main` branch** — the versioned branch (e.g. `16.0`) is the direct source of truth.
 The branch chain looks like this:
 ```
-11.0 ← 12.0 ← ... ← 16.0 (root) ← 17.0 ← ... ← 19.0
+11.0 ← 12.0 ← ... ← 16.0 (root) ← 17.0 ← ... ← 20.0
 ```
 
 ## installing

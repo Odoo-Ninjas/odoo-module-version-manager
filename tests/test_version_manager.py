@@ -35,6 +35,9 @@ class TestGetSourceBranch:
     def test_far_above_returns_next_down(self):
         assert _get_source_branch("19.0") == 18.0
 
+    def test_20_above_root_returns_19(self):
+        assert _get_source_branch("20.0") == 19.0
+
 
 # ---------------------------------------------------------------------------
 # _get_mappings
@@ -59,9 +62,14 @@ class TestGetMappings:
         assert mappings == [(12.0, 11.0)]
 
     def test_root_at_max_version_maps_only_lower(self, monkeypatch):
+        monkeypatch.setenv("MAIN_VERSION", "20.0")
+        mappings = list(_get_mappings("20.0"))
+        assert mappings == [(19.0, 20.0)]
+
+    def test_root_19_maps_to_18_and_20(self, monkeypatch):
         monkeypatch.setenv("MAIN_VERSION", "19.0")
         mappings = list(_get_mappings("19.0"))
-        assert mappings == [(18.0, 19.0)]
+        assert mappings == [(18.0, 19.0), (20.0, 19.0)]
 
 
 # ---------------------------------------------------------------------------
