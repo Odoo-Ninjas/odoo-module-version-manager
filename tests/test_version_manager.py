@@ -80,6 +80,11 @@ class TestGetMappings:
         monkeypatch.setenv("MAIN_VERSION", "19.0")
         assert list(_get_mappings("11.0")) == []
 
+    def test_deploy_patches_grants_write_all(self, monkeypatch):
+        # deploy_to_subversions.yml declares write-all; less fails at startup
+        monkeypatch.setenv("MAIN_VERSION", "19.0")
+        assert "\npermissions: write-all\n" in _get_deploy_patches("19.0")
+
     def test_deploy_patches_without_mappings_is_empty_string(self, monkeypatch):
         monkeypatch.setenv("MAIN_VERSION", "19.0")
         assert 'branches: ""' in _get_deploy_patches("20.0")
