@@ -6,11 +6,11 @@ on:
     branches:
       - <current_branch>
 
-# minimal permissions: push happens via SSH_PRIVATE_KEY, the token is
-# only used by the reusable workflow to create issues on rebase conflicts
-permissions:
-  contents: read
-  issues: write
+# The reusable workflow (deploy_to_subversions.yml) declares
+# `permissions: write-all`. A reusable workflow may never request more
+# permissions than the caller grants, so a narrower block here makes the
+# run fail at startup ("startup_failure", 0s) before any job runs.
+permissions: write-all
 
 jobs:
   deploy-subversions:
