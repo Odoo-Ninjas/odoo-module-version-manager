@@ -1,3 +1,4 @@
+# Part of Zebroo GmbH. See LICENSE file for full copyright and licensing details (www.zebroo.de/license).
 name: Test and Upload Pypi
 
 on:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, zebroo-tools]
 
     steps:
       - uses: actions/checkout@v3
